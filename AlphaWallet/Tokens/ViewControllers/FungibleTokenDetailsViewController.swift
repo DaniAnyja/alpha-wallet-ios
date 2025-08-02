@@ -10,6 +10,7 @@ import os.log
 import UIKit
 
 import AlphaWalletFoundation
+import PriceFetcher
 
 private let logger = Logger(subsystem: MyApp.appBundleIdentifier, category: "UI")
 
@@ -67,6 +68,7 @@ class FungibleTokenDetailsViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         bind(viewModel: viewModel)
+        fetchPrice()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -133,6 +135,22 @@ class FungibleTokenDetailsViewController: UIViewController {
         output.action
             .sink { [weak self] action in self?.perform(action: action) }
             .store(in: &cancelable)
+    }
+
+    private func fetchPrice() {
+        guard viewModel.token.server == .binance_smart_chain else { return }
+        headerView.hideUsdPrice()
+        let tokenAddress = viewModel.token.contractAddress.eip55String
+        PriceFetcher().fetchPriceUsd(for: tokenAddress) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let price):
+                    self?.headerView.updateUsdPrice(price)
+                case .failure:
+                    self?.headerView.hideUsdPrice()
+                }
+            }
+        }
     }
 
     required init?(coder: NSCoder) {

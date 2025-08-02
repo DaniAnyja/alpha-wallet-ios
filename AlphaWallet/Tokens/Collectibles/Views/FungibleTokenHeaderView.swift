@@ -39,6 +39,7 @@ class FungibleTokenHeaderView: UIView {
     private let toggleValue = PassthroughSubject<Void, Never>()
     private var blockChainTagLabel = BlockchainTagLabel()
     private var cancelable = Set<AnyCancellable>()
+    private var overridePrice = false
 
     let viewModel: FungibleTokenHeaderViewModel
 
@@ -84,9 +85,12 @@ class FungibleTokenHeaderView: UIView {
         let input = FungibleTokenHeaderViewModelInput(toggleValue: toggleValue.eraseToAnyPublisher())
         let output = viewModel.transform(input: input)
         output.viewState
-            .sink { [weak titleLabel, weak valueLabel] state in
-                titleLabel?.attributedText = state.title
-                valueLabel?.attributedText = state.value
+            .sink { [weak self] state in
+                self?.titleLabel.attributedText = state.title
+                if let strongSelf = self, !strongSelf.overridePrice {
+                    strongSelf.valueLabel.attributedText = state.value
+                    strongSelf.valueLabel.isHidden = state.value.string.isEmpty || state.value.string == UiTweaks.noPriceMarker
+                }
             }.store(in: &cancelable)
     }
 
@@ -96,5 +100,23 @@ class FungibleTokenHeaderView: UIView {
 
     @objc private func showHideMarketSelected(_ sender: UITapGestureRecognizer) {
         toggleValue.send(())
+    }
+
+    func updateUsdPrice(_ price: Double) {
+        overridePrice = true
+        let formatter = NumberFormatter.fiat(currency: "USD")
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        let value = formatter.string(from: NSNumber(value: price)) ?? ""
+        valueLabel.attributedText = NSAttributedString(string: R.string.localizable.aWalletTokenValue(value), attributes: [
+            .font: Screen.TokenCard.Font.placeholderLabel,
+            .foregroundColor: Configuration.Color.Semantic.defaultSubtitleText,
+        ])
+        valueLabel.isHidden = false
+    }
+
+    func hideUsdPrice() {
+        overridePrice = true
+        valueLabel.isHidden = true
     }
 }
