@@ -6,6 +6,64 @@ import FoundationNetworking
 
 final class PriceFetcherTests: XCTestCase {
     private var fetcher: PriceFetcher!
+    private var provider: MockTokenPriceProvider!
+
+    override func setUp() {
+        super.setUp()
+        provider = MockTokenPriceProvider()
+        fetcher = PriceFetcher(provider: provider)
+    }
+
+    override func tearDown() {
+        fetcher = nil
+        provider = nil
+        super.tearDown()
+    }
+
+    func testFetchPriceSuccess() {
+        provider.result = .success(1.23)
+
+        let exp = expectation(description: "Fetch price")
+        fetcher.fetchPriceUsd(for: "0x0") { result in
+            switch result {
+            case .success(let price):
+                XCTAssertEqual(price, 1.23)
+            case .failure:
+                XCTFail("Expected success")
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 1)
+    }
+
+    func testFetchPriceFailure() {
+        let error = NSError(domain: "test", code: 1)
+        provider.result = .failure(error)
+
+        let exp = expectation(description: "Fetch price fails")
+        fetcher.fetchPriceUsd(for: "0x0") { result in
+            switch result {
+            case .success:
+                XCTFail("Expected failure")
+            case .failure(let err):
+                XCTAssertEqual((err as NSError).domain, "test")
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 1)
+    }
+}
+
+private final class MockTokenPriceProvider: TokenPriceProvider {
+    var result: Result<Double, Error>!
+
+    func fetchPriceUsd(for tokenAddress: String, completion: @escaping (Result<Double, Error>) -> Void) {
+        completion(result)
+    }
+}
+
+final class DexScreenerPriceProviderTests: XCTestCase {
+    private var provider: DexScreenerPriceProvider!
     private var session: URLSession!
 
     override func setUp() {
@@ -13,11 +71,11 @@ final class PriceFetcherTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         session = URLSession(configuration: configuration)
-        fetcher = PriceFetcher(session: session)
+        provider = DexScreenerPriceProvider(session: session)
     }
 
     override func tearDown() {
-        fetcher = nil
+        provider = nil
         session = nil
         MockURLProtocol.stub = nil
         super.tearDown()
@@ -27,10 +85,11 @@ final class PriceFetcherTests: XCTestCase {
         let json = """
         {"pairs":[{"priceUsd":"1.23"}]}
         """.data(using: .utf8)
-        MockURLProtocol.stub = (data: json, response: HTTPURLResponse(url: URL(string: "https://example.com")!, statusCode: 200, httpVersion: nil, headerFields: nil), error: nil)
+        MockURLProtocol.stub = (data: json, response: HTTPURLResponse(url: URL(string: "https://example.com")!, statusCode: 200,
+                                                                        httpVersion: nil, headerFields: nil), error: nil)
 
         let exp = expectation(description: "Fetch price")
-        fetcher.fetchPriceUsd(for: "0x0") { result in
+        provider.fetchPriceUsd(for: "0x0") { result in
             switch result {
             case .success(let price):
                 XCTAssertEqual(price, 1.23)
@@ -47,7 +106,7 @@ final class PriceFetcherTests: XCTestCase {
         MockURLProtocol.stub = (data: nil, response: nil, error: error)
 
         let exp = expectation(description: "Fetch price fails")
-        fetcher.fetchPriceUsd(for: "0x0") { result in
+        provider.fetchPriceUsd(for: "0x0") { result in
             switch result {
             case .success:
                 XCTFail("Expected failure")
