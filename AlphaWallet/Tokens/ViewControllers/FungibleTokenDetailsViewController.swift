@@ -69,6 +69,8 @@ class FungibleTokenDetailsViewController: UIViewController {
         view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         bind(viewModel: viewModel)
         fetchPrice()
+
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Custom Price API", style: .plain, target: self, action: #selector(promptCustomPriceApi))
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -138,19 +140,60 @@ class FungibleTokenDetailsViewController: UIViewController {
     }
 
     private func fetchPrice() {
-        guard viewModel.token.server == .binance_smart_chain else { return }
         headerView.hideUsdPrice()
-        let tokenAddress = viewModel.token.contractAddress.eip55String
-        PriceFetcher().fetchPriceUsd(for: tokenAddress) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let price):
-                    self?.headerView.updateUsdPrice(price)
-                case .failure:
-                    self?.headerView.hideUsdPrice()
+        if let url = Config.customPriceURL(for: viewModel.token.contractAddress) {
+            PriceFetcher().fetchPriceUsd(from: url) { [weak self] result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let price):
+                        self?.headerView.updateUsdPrice(price)
+                    case .failure:
+                        self?.headerView.hideUsdPrice()
+                    }
+                }
+            }
+        } else if viewModel.token.server == .binance_smart_chain {
+            let tokenAddress = viewModel.token.contractAddress.eip55String
+            PriceFetcher().fetchPriceUsd(for: tokenAddress) { [weak self] result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let price):
+                        self?.headerView.updateUsdPrice(price)
+                    case .failure:
+                        self?.headerView.hideUsdPrice()
+                    }
                 }
             }
         }
+    }
+
+    @objc private func promptCustomPriceApi() {
+        let alert = UIAlertController(title: "Custom Price API", message: "Enter URL", preferredStyle: .alert)
+        alert.addTextField { textField in
+            textField.placeholder = "https://example.com/price.json"
+            if let existing = Config.customPriceURL(for: self.viewModel.token.contractAddress) {
+                textField.text = existing.absoluteString
+            }
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            guard let text = alert.textFields?.first?.text,
+                  let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+                self.showInvalidUrlAlert()
+                return
+            }
+            Config.setCustomPriceURL(url, for: self.viewModel.token.contractAddress)
+            self.fetchPrice()
+        })
+        present(alert, animated: true)
+    }
+
+    private func showInvalidUrlAlert() {
+        let alert = UIAlertController(title: "Invalid URL", message: "Please enter a valid URL.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     required init?(coder: NSCoder) {
