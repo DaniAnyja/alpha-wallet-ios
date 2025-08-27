@@ -141,27 +141,26 @@ class FungibleTokenDetailsViewController: UIViewController {
 
     private func fetchPrice() {
         headerView.hideUsdPrice()
+
+        let provider: TokenPriceProvider?
         if let url = Config.customPriceURL(for: viewModel.token.contractAddress) {
-            PriceFetcher().fetchPriceUsd(from: url) { [weak self] result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success(let price):
-                        self?.headerView.updateUsdPrice(price)
-                    case .failure:
-                        self?.headerView.hideUsdPrice()
-                    }
-                }
-            }
+            provider = CustomURLPriceProvider(url: url)
         } else if viewModel.token.server == .binance_smart_chain {
-            let tokenAddress = viewModel.token.contractAddress.eip55String
-            PriceFetcher().fetchPriceUsd(for: tokenAddress) { [weak self] result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success(let price):
-                        self?.headerView.updateUsdPrice(price)
-                    case .failure:
-                        self?.headerView.hideUsdPrice()
-                    }
+            provider = DexScreenerPriceProvider()
+        } else {
+            provider = nil
+        }
+
+        guard let provider else { return }
+
+        let tokenAddress = viewModel.token.contractAddress.eip55String
+        PriceFetcher(provider: provider).fetchPriceUsd(for: tokenAddress) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let price):
+                    self?.headerView.updateUsdPrice(price)
+                case .failure:
+                    self?.headerView.hideUsdPrice()
                 }
             }
         }
