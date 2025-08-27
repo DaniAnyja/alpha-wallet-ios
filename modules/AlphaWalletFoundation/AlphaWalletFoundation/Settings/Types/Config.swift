@@ -171,6 +171,18 @@ public struct Config {
         return dictionary["\(server.chainID)"]?.intValue
     }
 
+    public static func setCustomPriceURL(_ url: URL, for token: AlphaWallet.Address, defaults: UserDefaults = UserDefaults.standardOrForTests) {
+        var dictionary: [String: String] = (defaults.value(forKey: Keys.customPriceURLs) as? [String: String]) ?? .init()
+        dictionary[token.eip55String] = url.absoluteString
+        defaults.set(dictionary, forKey: Keys.customPriceURLs)
+    }
+
+    public static func customPriceURL(for token: AlphaWallet.Address, defaults: UserDefaults = UserDefaults.standardOrForTests) -> URL? {
+        guard let dictionary = defaults.value(forKey: Keys.customPriceURLs) as? [String: String],
+              let urlString = dictionary[token.eip55String] else { return nil }
+        return URL(string: urlString)
+    }
+
     public struct Keys {
         static let chainID = "chainID"
         static let isCryptoPrimaryCurrency = "isCryptoPrimaryCurrency"
@@ -193,6 +205,7 @@ public struct Config {
         static let sendAnalyticsEnabled = "sendAnalyticsEnabled"
         static let sendCrashReportingEnabled = "sendCrashReportingEnabled"
         static let haveMergedAttestationAndTokenTokenScriptFoldersV1 = "haveMergedAttestationAndTokenTokenScriptFoldersV1 "
+        static let customPriceURLs = "customPriceURLs"
     }
 
     public let defaults: UserDefaults
