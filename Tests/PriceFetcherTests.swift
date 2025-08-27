@@ -52,6 +52,26 @@ final class PriceFetcherTests: XCTestCase {
         }
         waitForExpectations(timeout: 1)
     }
+
+    func testHidePriceLabelWhenNetworkFails() {
+        let error = NSError(domain: "test", code: 1)
+        provider.result = .failure(error)
+
+        let headerView = MockFungibleTokenHeaderView()
+
+        let exp = expectation(description: "Hide price on failure")
+        fetcher.fetchPriceUsd(for: "0x0") { result in
+            switch result {
+            case .success:
+                XCTFail("Expected failure")
+            case .failure:
+                headerView.hideUsdPrice()
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 1)
+        XCTAssertTrue(headerView.isPriceHidden)
+    }
 }
 
 private final class MockTokenPriceProvider: TokenPriceProvider {
@@ -59,6 +79,14 @@ private final class MockTokenPriceProvider: TokenPriceProvider {
 
     func fetchPriceUsd(for tokenAddress: String, completion: @escaping (Result<Double, Error>) -> Void) {
         completion(result)
+    }
+}
+
+private final class MockFungibleTokenHeaderView {
+    private(set) var isPriceHidden = false
+
+    func hideUsdPrice() {
+        isPriceHidden = true
     }
 }
 
@@ -78,10 +106,11 @@ final class DexScreenerPriceProviderTests: XCTestCase {
         provider = nil
         session = nil
         MockURLProtocol.stub = nil
+        MockURLProtocol.lastRequest = nil
         super.tearDown()
     }
 
-    func testFetchPriceSuccess() {
+    func testParsesResponseCorrectly() {
         let json = """
         {"pairs":[{"priceUsd":"1.23"}]}
         """.data(using: .utf8)
@@ -119,13 +148,59 @@ final class DexScreenerPriceProviderTests: XCTestCase {
     }
 }
 
+final class CustomURLPriceProviderTests: XCTestCase {
+    private var provider: CustomURLPriceProvider!
+    private var session: URLSession!
+    private var url: URL!
+
+    override func setUp() {
+        super.setUp()
+        url = URL(string: "https://custom.example/price.json")!
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        session = URLSession(configuration: configuration)
+        provider = CustomURLPriceProvider(url: url, session: session)
+    }
+
+    override func tearDown() {
+        provider = nil
+        session = nil
+        url = nil
+        MockURLProtocol.stub = nil
+        MockURLProtocol.lastRequest = nil
+        super.tearDown()
+    }
+
+    func testInvokedWhenCustomURLConfigured() {
+        let json = """
+        {"pairs":[{"priceUsd":"1.23"}]}
+        """.data(using: .utf8)
+        MockURLProtocol.stub = (data: json, response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil), error: nil)
+
+        let exp = expectation(description: "Fetch custom price")
+        PriceFetcher(provider: provider).fetchPriceUsd(for: "ignored") { result in
+            switch result {
+            case .success(let price):
+                XCTAssertEqual(price, 1.23)
+            case .failure:
+                XCTFail("Expected success")
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 1)
+        XCTAssertEqual(MockURLProtocol.lastRequest?.url, url)
+    }
+}
+
 final class MockURLProtocol: URLProtocol {
     static var stub: (data: Data?, response: URLResponse?, error: Error?)?
+    static var lastRequest: URLRequest?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        MockURLProtocol.lastRequest = request
         if let error = MockURLProtocol.stub?.error {
             client?.urlProtocol(self, didFailWithError: error)
         } else {
